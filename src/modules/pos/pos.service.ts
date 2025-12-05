@@ -16,11 +16,35 @@ const REFUND_MANAGER_APPROVAL_THRESHOLD_CENTS = 10000; // $100 requires manager 
 const REFUND_TIME_WINDOW_HOURS = 72; // 3 days refund window
 const DEFAULT_HOLD_EXPIRY_MINUTES = 30;
 
+// Valid promo codes configuration
+// In production, these would be stored in database and validated via Prisma
+const VALID_PROMO_CODES = ['SAVE10', 'WELCOME', 'LOYALTY'] as const;
+const PROMO_DISCOUNT_PERCENTAGE = 0.1; // 10% discount
+
+// Type definitions for in-memory storage
+interface StoredHeldCart {
+  storeId: number;
+  data: HoldCartResponse & { cashierId: number; status: string };
+}
+
+interface StoredSale {
+  storeId: number;
+  saleNumber: string;
+  totalCents: number;
+  items: unknown[];
+  createdAt: Date;
+}
+
+interface StoredRefund {
+  storeId: number;
+  data: RefundResponse & { originalSaleId: number };
+}
+
 // In-memory storage for mock implementation
 // In production, these would be database operations via Prisma
-const heldCarts: Map<number, { storeId: number; data: HoldCartResponse & { cashierId: number; status: string } }> = new Map();
-const sales: Map<number, { storeId: number; saleNumber: string; totalCents: number; items: unknown[]; createdAt: Date }> = new Map();
-const refunds: Map<number, { storeId: number; data: RefundResponse & { originalSaleId: number } }> = new Map();
+const heldCarts: Map<number, StoredHeldCart> = new Map();
+const sales: Map<number, StoredSale> = new Map();
+const refunds: Map<number, StoredRefund> = new Map();
 const printJobs: Map<number, PrintResponse> = new Map();
 
 let holdIdCounter = 1;
@@ -118,10 +142,8 @@ const applyPromoCode = async (
   // Mock implementation - in production, validate against promo table
   // Check validity window, per-customer limits, etc.
   
-  // Simple mock: 10% discount for valid codes
-  const validCodes = ['SAVE10', 'WELCOME', 'LOYALTY'];
-  if (validCodes.includes(promoCode.toUpperCase())) {
-    return Math.floor(totalCents * 0.1);
+  if (VALID_PROMO_CODES.includes(promoCode.toUpperCase() as typeof VALID_PROMO_CODES[number])) {
+    return Math.floor(totalCents * PROMO_DISCOUNT_PERCENTAGE);
   }
   return 0;
 };
@@ -319,7 +341,7 @@ export const printInvoice = async (
 
 // UC-C6: Inventory Lookup by barcode
 export const inventoryLookup = async (
-  storeId: number,
+  _storeId: number,
   barcode: string
 ): Promise<InventoryLookupResponse | null> => {
   // Mock implementation - in production, query database
@@ -330,14 +352,18 @@ export const inventoryLookup = async (
     return null;
   }
 
+  // Generate a deterministic product ID based on barcode for consistent mock data
+  const productId = barcode.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 1000 + 1;
+  
   // Mock response - would query Product and InventoryRecord tables
+  // In production: query Product by SKU/barcode, then InventoryRecord for the store
   return {
-    productId: 1,
+    productId,
     sku: barcode,
-    name: 'Product Name',
+    name: `Product ${barcode}`,
     barcode,
     quantity: 0, // Return 0 if no inventory record exists
-    priceCents: 1000
+    priceCents: productId * 10 // Mock price based on product ID
   };
 };
 

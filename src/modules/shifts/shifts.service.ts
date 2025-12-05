@@ -119,8 +119,17 @@ export const closeShift = async (
   // Log discrepancy if any
   const discrepancyLogged = discrepancy !== 0;
   if (discrepancyLogged) {
-    // In production: Create AuditLog entry for cash discrepancy
-    console.log(`Cash discrepancy logged for shift ${activeShift.id}: ${discrepancy} cents`);
+    // In production: Create AuditLog entry for cash discrepancy via Prisma
+    // Example: await prisma.auditLog.create({
+    //   data: {
+    //     actorId: cashierId,
+    //     action: 'CASH_DISCREPANCY',
+    //     objectType: 'shift',
+    //     objectId: String(activeShift.id),
+    //     oldValue: { expected: expectedCash },
+    //     newValue: { actual: closingCash, discrepancy }
+    //   }
+    // });
   }
 
   // In production: Update Shift record in database via Prisma
