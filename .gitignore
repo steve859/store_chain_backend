@@ -9,3 +9,5 @@ coverage/
 docs/
 
 /src/generated/prisma
+
+pgadmin-data/
