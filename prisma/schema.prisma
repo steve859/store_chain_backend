@@ -371,7 +371,70 @@ model RoleAssignment {
   @@map("role_assignments")
 }
 
-// 9. ACCOUNTING & AUDIT
+// 9. SHIFTS
+
+model Shift {
+  id            Int       @id @default(autoincrement())
+  storeId       Int       @map("store_id")
+  cashierId     Int       @map("cashier_id")
+  openedAt      DateTime  @default(now()) @map("opened_at")
+  closedAt      DateTime? @map("closed_at")
+  openingCash   BigInt?   @map("opening_cash")
+  closingCash   BigInt?   @map("closing_cash")
+  expectedCash  BigInt?   @map("expected_cash")
+  discrepancy   BigInt?
+  status        String    @default("open")
+  notes         String?   @db.Text
+
+  @@map("shifts")
+}
+
+// 10. HELD CARTS
+
+model HeldCart {
+  id          Int       @id @default(autoincrement())
+  storeId     Int       @map("store_id")
+  cashierId   Int       @map("cashier_id")
+  items       Json
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  status      String    @default("held")
+
+  @@map("held_carts")
+}
+
+// 11. REFUNDS
+
+model Refund {
+  id              Int       @id @default(autoincrement())
+  refundNumber    String    @unique @map("refund_number")
+  storeId         Int       @map("store_id")
+  originalSaleId  Int       @map("original_sale_id")
+  cashierId       Int       @map("cashier_id")
+  managerId       Int?      @map("manager_id")
+  amountCents     BigInt    @map("amount_cents")
+  reason          String?
+  items           Json?
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("refunds")
+}
+
+// 12. PRINT JOBS (for audit)
+
+model PrintJob {
+  id          Int       @id @default(autoincrement())
+  storeId     Int       @map("store_id")
+  invoiceId   Int       @map("invoice_id")
+  printedBy   Int       @map("printed_by")
+  printedAt   DateTime  @default(now()) @map("printed_at")
+  printType   String    @map("print_type")
+
+  @@map("print_jobs")
+}
+
+// 13. ACCOUNTING & AUDIT
 
 model SupplierInvoice {
   id            Int       @id @default(autoincrement())
