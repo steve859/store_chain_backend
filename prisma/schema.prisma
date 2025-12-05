@@ -5,7 +5,7 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../src/generated/prisma"
 }
 
@@ -13,399 +13,155 @@ datasource db {
   provider = "postgresql"
 }
 
-// 1. PRODUCTS & CATALOG
-
-model Product {
-  id                  Int                   @id @default(autoincrement())
-  sku                 String                @unique
-  name                String?
-  categoryId          Int?                  @map("category_id")
-  brand               String?
-  baseUnit            String?               @map("base_unit")
-  isBundle            Boolean?              @map("is_bundle")
-  weightKg            Decimal?              @map("weight_kg")
-  lengthCm            Decimal?              @map("length_cm")
-  widthCm             Decimal?              @map("width_cm")
-  heightCm            Decimal?              @map("height_cm")
-  storageInstructions String?               @map("storage_instructions") @db.Text
-  requiresColdChain   Boolean?              @map("requires_cold_chain")
-  createdAt           DateTime?             @default(now()) @map("created_at")
-  updatedAt           DateTime?             @updatedAt @map("updated_at")
-
-  // Relations
-  units               ProductUnit[]
-  prices              ProductPrice[]
-  inventoryRecords    InventoryRecord[]
-  inventoryTransActions InventoryTransaction[]
-  supplierProducts    SupplierProduct[]
-  poLines             PoLine[]
-  grnLines            GrnLine[]
-  transferItems       TransferItem[]
-  saleItems           SaleItem[]
-  countLines          InventoryCountLine[]
-
-  @@map("products")
-}
-
-model ProductUnit {
-  id           Int      @id @default(autoincrement())
-  productId    Int?     @map("product_id")
-  unitName     String?  @map("unit_name")
-  factorToBase Decimal? @map("factor_to_base")
-
-  product Product? @relation(fields: [productId], references: [id])
-
-  @@map("product_units")
-}
-
-model ProductPrice {
-  id             Int       @id @default(autoincrement())
-  productId      Int?      @map("product_id")
-  priceCents     BigInt?   @map("price_cents")
-  costPriceCents BigInt?   @map("cost_price_cents")
-  effectiveFrom  DateTime? @map("effective_from")
-  effectiveTo    DateTime? @map("effective_to")
-  scope          String?
-  storeId        Int?      @map("store_id")
-  createdAt      DateTime? @default(now()) @map("created_at")
-
-  product Product? @relation(fields: [productId], references: [id])
-
-  @@map("product_prices")
-}
-
-// 2. STORES
-
 model Store {
-  id            Int      @id @default(autoincrement())
-  code          String?  @unique
-  name          String?
-  address       String?  @db.Text
-  region        String?
-  timezone      String?
-  openingHours  Json?    @map("opening_hours")
-  warehouseType String?  @map("warehouse_type")
-  isActive      Boolean? @map("is_active")
-  createdAt     DateTime? @default(now()) @map("created_at")
+  id        String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name      String
+  address   String?
+  phone     String?
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
 
-  // Relations
-  inventoryRecords      InventoryRecord[]
-  inventoryTransactions InventoryTransaction[]
-  purchaseOrders        PurchaseOrder[]
-  sales                 Sales[]
-  inventoryCounts       InventoryCount[]
-  
-  transfersSent         Transfer[] @relation("FromStore")
-  transfersReceived     Transfer[] @relation("ToStore")
+  users            User[]            @relation("StoreUsers")
+  inventoryLevels  InventoryLevel[]
+  posSales         PosSale[]
+  purchaseOrders   PurchaseOrder[]
 
   @@map("stores")
 }
 
-// 3. INVENTORY
+model Role {
+  id    String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name  String  @unique
 
-model InventoryRecord {
-  id            Int       @id @default(autoincrement())
-  storeId       Int?      @map("store_id")
-  productId     Int?      @map("product_id")
-  batchNo       String?   @map("batch_no")
-  expiryDate    DateTime? @map("expiry_date") @db.Date
-  qtyBase       Decimal?  @map("qty_base")
-  reservedQty   Decimal?  @map("reserved_qty")
-  lastReceivedAt DateTime? @map("last_received_at")
+  users User[]
 
-  store   Store?   @relation(fields: [storeId], references: [id])
-  product Product? @relation(fields: [productId], references: [id])
-
-  @@map("inventory_records")
+  @@map("roles")
 }
 
-model InventoryTransaction {
-  id           Int       @id @default(autoincrement())
-  txType       String?   @map("tx_type")
-  refId        String?   @map("ref_id")
-  storeId      Int?      @map("store_id")
-  productId    Int?      @map("product_id")
-  totalQtyBase Decimal?  @map("total_qty_base")
-  details      Json?
-  createdBy    Int?      @map("created_by")
-  createdAt    DateTime? @default(now()) @map("created_at")
+model User {
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  storeId      String?    @map("store_id") @db.Uuid
+  roleId       String?    @map("role_id") @db.Uuid
+  name         String
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
-  store   Store?   @relation(fields: [storeId], references: [id])
-  product Product? @relation(fields: [productId], references: [id])
+  store      Store?    @relation("StoreUsers", fields: [storeId], references: [id], onDelete: SetNull)
+  role       Role?     @relation(fields: [roleId], references: [id])
+  sales      PosSale[] @relation("CashierSales")
+  auditLogs  AuditLog[]
 
-  @@map("inventory_transactions")
+  @@map("users")
 }
 
-// 4. SUPPLIERS & PURCHASE
+model Product {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String
+  description String?
+  category    String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  skus Sku[]
+
+  @@map("products")
+}
+
+model Sku {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  skuCode   String   @map("sku_code") @unique
+  barcode   String?  @unique
+  unit      String
+  cost      Decimal  @db.Decimal
+  price     Decimal  @db.Decimal
+
+  product          Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryLevels  InventoryLevel[]
+  posLineItems     PosLineItem[]
+
+  @@map("skus")
+}
+
+model InventoryLevel {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  skuId     String   @map("sku_id") @db.Uuid
+  quantity  Int      @default(0)
+  reserved  Int      @default(0)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sku   Sku   @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, skuId])
+  @@map("inventory_levels")
+}
+
+model PosSale {
+  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  storeId       String?       @map("store_id") @db.Uuid
+  cashierId     String?       @map("cashier_id") @db.Uuid
+  totalAmount   Decimal       @map("total_amount") @db.Decimal
+  paidAmount    Decimal?      @map("paid_amount") @db.Decimal
+  paymentMethod String        @map("payment_method")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  store   Store?       @relation(fields: [storeId], references: [id])
+  cashier User?        @relation("CashierSales", fields: [cashierId], references: [id])
+  items   PosLineItem[]
+
+  @@map("pos_sales")
+}
+
+model PosLineItem {
+  id       String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  saleId   String  @map("sale_id") @db.Uuid
+  skuId    String  @map("sku_id") @db.Uuid
+  quantity Int
+  price    Decimal @db.Decimal
+
+  sale PosSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sku  Sku     @relation(fields: [skuId], references: [id])
+
+  @@map("pos_line_items")
+}
 
 model Supplier {
-  id                  Int       @id @default(autoincrement())
-  code                String?
-  name                String?
-  contact             Json?
-  defaultLeadTimeDays Int?      @map("default_lead_time_days")
-  createdAt           DateTime? @default(now()) @map("created_at")
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  products       SupplierProduct[]
   purchaseOrders PurchaseOrder[]
 
   @@map("suppliers")
 }
 
-model SupplierProduct {
-  id             Int      @id @default(autoincrement())
-  supplierId     Int?     @map("supplier_id")
-  supplierSku    String?  @map("supplier_sku")
-  productId      Int?     @map("product_id")
-  priceCents     BigInt?  @map("price_cents")
-  moq            Int?
-  leadTimeDays   Int?     @map("lead_time_days")
-  preferred      Boolean?
-
-  supplier Supplier? @relation(fields: [supplierId], references: [id])
-  product  Product?  @relation(fields: [productId], references: [id])
-
-  @@map("supplier_products")
-}
-
 model PurchaseOrder {
-  id         Int       @id @default(autoincrement())
-  poNumber   String?   @unique @map("po_number")
-  supplierId Int?      @map("supplier_id")
-  storeId    Int?      @map("store_id")
-  status     String?
-  totalCents BigInt?   @map("total_cents")
-  createdBy  Int?      @map("created_by")
-  createdAt  DateTime? @default(now()) @map("created_at")
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  supplierId String? @map("supplier_id") @db.Uuid
+  storeId   String?  @map("store_id") @db.Uuid
+  status    String   @default("pending")
+  totalCost Decimal  @default(0) @map("total_cost") @db.Decimal
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   supplier Supplier? @relation(fields: [supplierId], references: [id])
   store    Store?    @relation(fields: [storeId], references: [id])
-  lines    PoLine[]
-  grns     Grn[]
 
   @@map("purchase_orders")
 }
 
-model PoLine {
-  id             Int       @id @default(autoincrement())
-  poId           Int?      @map("po_id")
-  productId      Int?      @map("product_id")
-  qtyBase        Decimal?  @map("qty_base")
-  unitPriceCents BigInt?   @map("unit_price_cents")
-  expectedDate   DateTime? @map("expected_date") @db.Date
-  receivedQtyBase Decimal? @map("received_qty_base")
-
-  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
-  product       Product?       @relation(fields: [productId], references: [id])
-
-  @@map("po_lines")
-}
-
-model Grn {
-  id         Int       @id @default(autoincrement())
-  grnNumber  String?   @unique @map("grn_number")
-  poId       Int?      @map("po_id")
-  storeId    Int?      @map("store_id")
-  receivedBy Int?      @map("received_by")
-  receivedAt DateTime? @map("received_at")
-  status     String?
-
-  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
-  lines         GrnLine[]
-
-  @@map("grn")
-}
-
-model GrnLine {
-  id             Int       @id @default(autoincrement())
-  grnId          Int?      @map("grn_id")
-  productId      Int?      @map("product_id")
-  batchNo        String?   @map("batch_no")
-  expiryDate     DateTime? @map("expiry_date") @db.Date
-  qtyBase        Decimal?  @map("qty_base")
-  costPriceCents BigInt?   @map("cost_price_cents")
-
-  grn     Grn?     @relation(fields: [grnId], references: [id])
-  product Product? @relation(fields: [productId], references: [id])
-
-  @@map("grn_lines")
-}
-
-// 5. TRANSFERS
-
-model Transfer {
-  id             Int       @id @default(autoincrement())
-  transferNumber String?   @unique @map("transfer_number")
-  fromStoreId    Int?      @map("from_store_id")
-  toStoreId      Int?      @map("to_store_id")
-  status         String?
-  createdBy      Int?      @map("created_by")
-  createdAt      DateTime? @default(now()) @map("created_at")
-
-  fromStore Store?         @relation("FromStore", fields: [fromStoreId], references: [id])
-  toStore   Store?         @relation("ToStore", fields: [toStoreId], references: [id])
-  items     TransferItem[]
-
-  @@map("transfers")
-}
-
-model TransferItem {
-  id            Int      @id @default(autoincrement())
-  transferId    Int?     @map("transfer_id")
-  productId     Int?     @map("product_id")
-  qtyBase       Decimal? @map("qty_base")
-  pickedQtyBase Decimal? @map("picked_qty_base")
-
-  transfer Transfer? @relation(fields: [transferId], references: [id])
-  product  Product?  @relation(fields: [productId], references: [id]) // Thêm quan hệ product
-
-  @@map("transfer_items")
-}
-
-// 6. SALES
-
-model Sales {
-  id         Int       @id @default(autoincrement())
-  saleNumber String?   @unique @map("sale_number")
-  storeId    Int?      @map("store_id")
-  shiftId    Int?      @map("shift_id")
-  cashierId  Int?      @map("cashier_id")
-  totalCents BigInt?   @map("total_cents")
-  payments   Json?
-  status     String?
-  createdAt  DateTime? @default(now()) @map("created_at")
-
-  store Store?     @relation(fields: [storeId], references: [id])
-  items SaleItem[]
-
-  @@map("sales")
-}
-
-model SaleItem {
-  id                Int      @id @default(autoincrement())
-  saleId            Int?     @map("sale_id")
-  productId         Int?     @map("product_id")
-  qtyBase           Decimal? @map("qty_base")
-  sellingPriceCents BigInt?  @map("selling_price_cents")
-  consumedBatches   Json?    @map("consumed_batches")
-
-  sale    Sales?   @relation(fields: [saleId], references: [id])
-  product Product? @relation(fields: [productId], references: [id])
-
-  @@map("sale_items")
-}
-
-// 7. INVENTORY COUNT
-
-model InventoryCount {
-  id          Int       @id @default(autoincrement())
-  countNumber String?   @unique @map("count_number")
-  storeId     Int?      @map("store_id")
-  type        String?
-  scheduledAt DateTime? @map("scheduled_at")
-  status      String?
-  createdBy   Int?      @map("created_by")
-  createdAt   DateTime? @default(now()) @map("created_at")
-
-  store Store?               @relation(fields: [storeId], references: [id])
-  lines InventoryCountLine[]
-
-  @@map("inventory_counts")
-}
-
-model InventoryCountLine {
-  id               Int      @id @default(autoincrement())
-  inventoryCountId Int?     @map("inventory_count_id")
-  productId        Int?     @map("product_id")
-  batchNo          String?  @map("batch_no")
-  countedQtyBase   Decimal? @map("counted_qty_base")
-
-  inventoryCount InventoryCount? @relation(fields: [inventoryCountId], references: [id])
-  product        Product?        @relation(fields: [productId], references: [id])
-
-  @@map("inventory_count_lines")
-}
-
-// 8. EMPLOYEES & USERS
-
-model Employee {
-  id               Int       @id @default(autoincrement())
-  employeeCode     String?   @map("employee_code")
-  fullName         String?   @map("full_name")
-  email            String?
-  phone            String?
-  roles            Json?
-  assignedStoreIds Int[]     @map("assigned_store_ids")
-  employmentType   String?   @map("employment_type")
-  isActive         Boolean?  @map("is_active")
-  createdAt        DateTime? @default(now()) @map("created_at")
-
-  users User[]
-
-  @@map("employees")
-}
-
-model User {
-  id           Int       @id @default(autoincrement())
-  username     String?
-  passwordHash String?   @map("password_hash")
-  employeeId   Int?      @map("employee_id")
-  isActive     Boolean?  @map("is_active")
-  createdAt    DateTime? @default(now()) @map("created_at")
-
-  employee        Employee?        @relation(fields: [employeeId], references: [id])
-  roleAssignments RoleAssignment[]
-
-  @@map("users")
-}
-
-model RoleAssignment {
-  id        Int       @id @default(autoincrement())
-  userId    Int?      @map("user_id")
-  roleName  String?   @map("role_name")
-  storeId   Int?      @map("store_id")
-  createdAt DateTime? @default(now()) @map("created_at")
+model AuditLog {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  entity    String?
+  entityId  String?  @map("entity_id") @db.Uuid
+  detail    Json?    @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   user User? @relation(fields: [userId], references: [id])
-
-  @@map("role_assignments")
-}
-
-// 9. ACCOUNTING & AUDIT
-
-model SupplierInvoice {
-  id            Int       @id @default(autoincrement())
-  invoiceNumber String?   @map("invoice_number")
-  supplierId    Int?      @map("supplier_id")
-  poId          Int?      @map("po_id")
-  amountCents   BigInt?   @map("amount_cents")
-  dueDate       DateTime? @map("due_date") @db.Date
-  status        String?
-  createdAt     DateTime? @default(now()) @map("created_at")
-
-  @@map("supplier_invoices")
-}
-
-model Journal {
-  id            Int       @id @default(autoincrement())
-  journalDate   DateTime? @map("journal_date") @db.Date
-  entries       Json?
-  referenceType String?   @map("reference_type")
-  referenceId   String?   @map("reference_id")
-  createdAt     DateTime? @default(now()) @map("created_at")
-
-  @@map("journals")
-}
-
-model AuditLog {
-  id         Int       @id @default(autoincrement())
-  actorId    Int?      @map("actor_id")
-  action     String?
-  objectType String?   @map("object_type")
-  objectId   String?   @map("object_id")
-  oldValue   Json?     @map("old_value")
-  newValue   Json?     @map("new_value")
-  createdAt  DateTime? @default(now()) @map("created_at")
 
   @@map("audit_logs")
 }
