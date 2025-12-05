@@ -9,7 +9,8 @@ dotenv.config();
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-BigInt.prototype.toJSON = function () {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
 

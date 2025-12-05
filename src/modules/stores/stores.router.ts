@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import managerRouter from './manager';
 
 const router = Router();
 
@@ -16,5 +17,8 @@ router.get('/:id', (req, res) => {
 router.post('/', (_req, res) => {
   res.status(501).json({ message: 'Not Implemented' });
 });
+
+// Mount manager routes under /api/v1/stores/:storeId/*
+router.use('/:storeId', managerRouter);
 
 export default router;
