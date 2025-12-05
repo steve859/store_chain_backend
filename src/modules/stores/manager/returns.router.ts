@@ -22,6 +22,8 @@ interface StoreReturnParams extends StoreParams {
 // Configurable settings
 const RETURN_WINDOW_DAYS = 30;
 const HIGH_VALUE_THRESHOLD_CENTS = 100000; // $1000
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const STUB_SALE_DAYS_AGO = 10;
 
 // GET /api/v1/stores/:storeId/returns - List returns for store
 router.get('/', (req: Request<StoreParams>, res: Response) => {
@@ -84,8 +86,8 @@ router.post('/', (req: Request<StoreParams>, res: Response) => {
     acc + (item.priceCents || 0) * item.quantity, 0);
 
   // Check return window (stub - would check sale date)
-  const saleDateStub = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000); // 10 days ago
-  const daysSinceSale = Math.floor((Date.now() - saleDateStub.getTime()) / (1000 * 60 * 60 * 24));
+  const saleDateStub = new Date(Date.now() - STUB_SALE_DAYS_AGO * MS_PER_DAY);
+  const daysSinceSale = Math.floor((Date.now() - saleDateStub.getTime()) / MS_PER_DAY);
   
   if (daysSinceSale > RETURN_WINDOW_DAYS) {
     return res.status(400).json({ 

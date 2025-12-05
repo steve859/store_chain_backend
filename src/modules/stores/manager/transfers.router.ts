@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 
 const router = Router({ mergeParams: true });
 
+// Constants
+const NUMBER_PADDING = 6;
+
 // Define param types for merged params
 interface StoreParams {
   storeId: string;
@@ -41,7 +44,7 @@ router.get('/:transferId', (req: Request<StoreTransferParams>, res: Response) =>
 
   res.json({
     id: parseInt(transferId, 10),
-    transferNumber: `TRF-${transferId.padStart(6, '0')}`,
+    transferNumber: `TRF-${transferId.padStart(NUMBER_PADDING, '0')}`,
     fromStoreId: null,
     toStoreId: null,
     status: 'pending',

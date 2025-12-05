@@ -2,6 +2,18 @@ import { Router, Request, Response } from 'express';
 
 const router = Router({ mergeParams: true });
 
+// Constants
+const DEFAULT_REPORT_DAYS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Helper function to get default date range
+function getDefaultDateRange() {
+  return {
+    from: new Date(Date.now() - DEFAULT_REPORT_DAYS * MS_PER_DAY).toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0]
+  };
+}
+
 // Define param types for merged params
 interface StoreParams {
   storeId: string;
@@ -33,13 +45,14 @@ router.get('/', (req: Request<StoreParams>, res: Response) => {
 router.get('/revenue', (req: Request<StoreParams>, res: Response) => {
   const { storeId } = req.params;
   const { from, to, format } = req.query;
+  const defaultRange = getDefaultDateRange();
 
   const report = {
     storeId: parseInt(storeId, 10),
     reportType: 'revenue',
     period: {
-      from: from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      to: to || new Date().toISOString().split('T')[0]
+      from: from || defaultRange.from,
+      to: to || defaultRange.to
     },
     data: {
       totalRevenue: 0,
@@ -71,13 +84,14 @@ router.get('/revenue', (req: Request<StoreParams>, res: Response) => {
 router.get('/best-sellers', (req: Request<StoreParams>, res: Response) => {
   const { storeId } = req.params;
   const { from, to, limit, format } = req.query;
+  const defaultRange = getDefaultDateRange();
 
   const report = {
     storeId: parseInt(storeId, 10),
     reportType: 'best-sellers',
     period: {
-      from: from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      to: to || new Date().toISOString().split('T')[0]
+      from: from || defaultRange.from,
+      to: to || defaultRange.to
     },
     limit: parseInt(limit as string, 10) || 10,
     data: {
@@ -150,13 +164,14 @@ router.get('/inventory-valuation', (req: Request<StoreParams>, res: Response) =>
 router.get('/sales-by-category', (req: Request<StoreParams>, res: Response) => {
   const { storeId } = req.params;
   const { from, to, format } = req.query;
+  const defaultRange = getDefaultDateRange();
 
   const report = {
     storeId: parseInt(storeId, 10),
     reportType: 'sales-by-category',
     period: {
-      from: from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      to: to || new Date().toISOString().split('T')[0]
+      from: from || defaultRange.from,
+      to: to || defaultRange.to
     },
     data: {
       categories: []

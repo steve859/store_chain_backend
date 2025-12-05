@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 
 const router = Router({ mergeParams: true });
 
+// Constants
+const NUMBER_PADDING = 6;
+
 // Define param types for merged params
 interface StoreParams {
   storeId: string;
@@ -39,7 +42,7 @@ router.get('/:poId', (req: Request<StorePOParams>, res: Response) => {
 
   res.json({
     id: parseInt(poId, 10),
-    poNumber: `PO-${poId.padStart(6, '0')}`,
+    poNumber: `PO-${poId.padStart(NUMBER_PADDING, '0')}`,
     storeId: parseInt(storeId, 10),
     supplierId: null,
     status: 'draft',
@@ -167,7 +170,7 @@ router.post('/:poId/receive', (req: Request<StorePOParams>, res: Response) => {
       status: isPartial ? 'partial_received' : 'received'
     },
     grn: {
-      grnNumber: `GRN-${poId.padStart(6, '0')}`,
+      grnNumber: `GRN-${poId.padStart(NUMBER_PADDING, '0')}`,
       receivedBy: receivedBy || null,
       receivedAt: new Date().toISOString(),
       lines: lines || []
