@@ -210,7 +210,7 @@ router.post('/sales/:saleId/print', (req: Request<StoreSaleParams>, res: Respons
     receipt: {
       saleId: parseInt(saleId, 10),
       storeId: parseInt(storeId, 10),
-      receiptNumber: `RCP-${saleId.padStart(6, '0')}`,
+      receiptNumber: `RCP-${String(saleId).padStart(6, '0')}`,
       format: format || 'thermal',
       printJob: {
         id: 1,
@@ -229,7 +229,7 @@ router.get('/sales/:saleId/receipt', (req: Request<StoreSaleParams>, res: Respon
   const receiptData = {
     saleId: parseInt(saleId, 10),
     storeId: parseInt(storeId, 10),
-    receiptNumber: `RCP-${saleId.padStart(6, '0')}`,
+    receiptNumber: `RCP-${String(saleId).padStart(6, '0')}`,
     storeName: 'Store Name',
     storeAddress: 'Store Address',
     date: new Date().toISOString(),
@@ -382,7 +382,7 @@ router.post('/sales/apply-promotion', (req: Request<StorePOSParams>, res: Respon
   const { storeId } = req.params;
   const { saleId, promotionId, loyaltyCardNumber } = req.body;
 
-  if (!saleId && !promotionId && !loyaltyCardNumber) {
+  if (!saleId || (!promotionId && !loyaltyCardNumber)) {
     return res.status(400).json({ error: 'Sale ID and either promotion ID or loyalty card number is required' });
   }
 
