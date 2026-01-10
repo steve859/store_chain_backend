@@ -9,13 +9,12 @@ dotenv.config();
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-BigInt.prototype.toJSON = function () {
+(BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
 
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`API server listening on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`API server listening on http://0.0.0.0:${PORT}`);
 });
 
 const startServer = async () => {
