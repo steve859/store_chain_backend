@@ -11,3 +11,5 @@ docs/
 /src/generated/prisma
 
 pgadmin-data/
+
+/src/generated/prisma

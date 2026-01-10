@@ -21,7 +21,7 @@
   },
   "homepage": "https://github.com/steve859/store_chain_backend#readme",
   "dependencies": {
-    "@prisma/client": "^7.0.1",
+    "@prisma/client": "^7.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
@@ -39,7 +39,7 @@
     "@typescript-eslint/parser": "^7.0.1",
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
-    "prisma": "^7.0.1",
+    "prisma": "^7.2.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
     "ts-node-dev": "^2.0.0",
@@ -51,5 +51,10 @@
     "testMatch": [
       "**/tests/**/*.test.ts"
     ]
-  }
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "keywords": []
 }
