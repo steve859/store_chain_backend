@@ -3,6 +3,213 @@ import prisma from '../../db/prisma';
 
 const router = Router();
 
+const toNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const getOpenShift = async (storeId: number) => {
+  const prefix = `shift_${storeId}_`;
+  const lastOpen = await prisma.audit_logs.findFirst({
+    where: { action: 'shift_open', object_type: 'shift', object_id: { startsWith: prefix } },
+    orderBy: { created_at: 'desc' },
+  });
+
+  if (!lastOpen?.object_id) return null;
+
+  const closed = await prisma.audit_logs.findFirst({
+    where: { action: 'shift_close', object_type: 'shift', object_id: lastOpen.object_id },
+    orderBy: { created_at: 'desc' },
+  });
+
+  if (closed) return null;
+
+  return lastOpen;
+};
+
+// UC-C5: Shift open (persisted in audit_logs)
+router.post('/shifts/open', async (req, res, next) => {
+  try {
+    const storeId = toNumber(req.body?.storeId);
+    const openedBy = toNumber(req.body?.openedBy ?? req.body?.cashierId);
+    const openingCash = toNumber(req.body?.openingCash) ?? 0;
+    const note = req.body?.note ? String(req.body.note) : null;
+
+    if (!storeId || !openedBy) {
+      return res.status(400).json({ error: 'storeId and openedBy are required' });
+    }
+    if (openingCash < 0) {
+      return res.status(400).json({ error: 'openingCash must be >= 0' });
+    }
+
+    const existing = await getOpenShift(storeId);
+    if (existing) {
+      return res.status(409).json({
+        error: 'Shift already open',
+        shift: {
+          id: existing.object_id,
+          storeId,
+          openedBy: existing.user_id,
+          openedAt: existing.created_at,
+          openingCash: (existing.payload as any)?.openingCash ?? null,
+          note: (existing.payload as any)?.note ?? null,
+          status: 'open',
+        },
+      });
+    }
+
+    const shiftId = `shift_${storeId}_${Date.now()}`;
+
+    const created = await prisma.audit_logs.create({
+      data: {
+        user_id: Math.trunc(openedBy),
+        action: 'shift_open',
+        object_type: 'shift',
+        object_id: shiftId,
+        payload: {
+          storeId,
+          openingCash,
+          note,
+        },
+      },
+    });
+
+    return res.status(201).json({
+      shift: {
+        id: created.object_id,
+        storeId,
+        openedBy: created.user_id,
+        openedAt: created.created_at,
+        openingCash,
+        note,
+        status: 'open',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// UC-C5: Shift close (close current open shift for store)
+router.post('/shifts/close', async (req, res, next) => {
+  try {
+    const storeId = toNumber(req.body?.storeId);
+    const closedBy = toNumber(req.body?.closedBy ?? req.body?.cashierId);
+    const closingCash = toNumber(req.body?.closingCash);
+    const note = req.body?.note ? String(req.body.note) : null;
+
+    if (!storeId || !closedBy || closingCash === null) {
+      return res.status(400).json({ error: 'storeId, closedBy, closingCash are required' });
+    }
+    if (closingCash < 0) {
+      return res.status(400).json({ error: 'closingCash must be >= 0' });
+    }
+
+    const open = await getOpenShift(storeId);
+    if (!open?.object_id) {
+      return res.status(404).json({ error: 'No open shift found' });
+    }
+
+    const closed = await prisma.audit_logs.create({
+      data: {
+        user_id: Math.trunc(closedBy),
+        action: 'shift_close',
+        object_type: 'shift',
+        object_id: open.object_id,
+        payload: {
+          storeId,
+          closingCash,
+          note,
+          openedAt: open.created_at,
+          openedBy: open.user_id,
+          openingCash: (open.payload as any)?.openingCash ?? null,
+        },
+      },
+    });
+
+    return res.status(201).json({
+      shift: {
+        id: open.object_id,
+        storeId,
+        openedBy: open.user_id,
+        openedAt: open.created_at,
+        openingCash: (open.payload as any)?.openingCash ?? null,
+        closedBy: closed.user_id,
+        closedAt: closed.created_at,
+        closingCash,
+        note,
+        status: 'closed',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// UC-C5: Get current open shift
+router.get('/shifts/current', async (req, res, next) => {
+  try {
+    const storeId = req.query.storeId ? Number(req.query.storeId) : NaN;
+    if (!Number.isFinite(storeId)) {
+      return res.status(400).json({ error: 'storeId query param is required' });
+    }
+
+    const open = await getOpenShift(storeId);
+    if (!open?.object_id) {
+      return res.json({ shift: null });
+    }
+
+    return res.json({
+      shift: {
+        id: open.object_id,
+        storeId,
+        openedBy: open.user_id,
+        openedAt: open.created_at,
+        openingCash: (open.payload as any)?.openingCash ?? null,
+        note: (open.payload as any)?.note ?? null,
+        status: 'open',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// UC-C6: Inventory lookup for POS
+// GET /api/v1/pos/inventory/lookup?storeId=1&barcode=...   OR   ?storeId=1&variantId=10
+router.get('/inventory/lookup', async (req, res, next) => {
+  try {
+    const storeId = req.query.storeId ? Number(req.query.storeId) : NaN;
+    const barcode = String(req.query.barcode ?? '').trim();
+    const variantId = req.query.variantId ? Number(req.query.variantId) : NaN;
+
+    if (!Number.isFinite(storeId)) {
+      return res.status(400).json({ error: 'storeId is required' });
+    }
+
+    if (!barcode && !Number.isFinite(variantId)) {
+      return res.status(400).json({ error: 'Provide barcode or variantId' });
+    }
+
+    const variant = barcode
+      ? await prisma.product_variants.findFirst({ where: { barcode }, include: { products: true } })
+      : await prisma.product_variants.findUnique({ where: { id: variantId }, include: { products: true } });
+
+    if (!variant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
+    const inventory = await prisma.inventories.findFirst({
+      where: { store_id: storeId, variant_id: variant.id },
+    });
+
+    return res.json({ variant, inventory });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // UC-C4: Receipt payload
 router.get('/invoices/:id/receipt', async (req, res, next) => {
   try {
