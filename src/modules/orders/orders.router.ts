@@ -1,17 +1,301 @@
 import { Router } from 'express';
+import { Prisma } from '../../generated/prisma';
+import prisma from '../../db/prisma';
 
 const router = Router();
 
-router.get('/', (_req, res) => {
-  res.json({ items: [], total: 0 });
+const toDecimal = (value: unknown): Prisma.Decimal => {
+  if (value === null || value === undefined || value === '') {
+    throw new Error('Invalid decimal value');
+  }
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    throw new Error('Invalid decimal value');
+  }
+  return new Prisma.Decimal(num);
+};
+
+const generateOrderNumber = (): string => {
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `PO-${Date.now()}-${rand}`;
+};
+
+/**
+ * UC-M3: Purchase order list
+ * GET /api/v1/orders?storeId=1&status=draft&take=50&skip=0
+ */
+router.get('/', async (req, res, next) => {
+  try {
+    const storeId = req.query.storeId ? Number(req.query.storeId) : undefined;
+    const status = req.query.status ? String(req.query.status) : undefined;
+    const supplierId = req.query.supplierId ? Number(req.query.supplierId) : undefined;
+    const take = req.query.take ? Math.min(Number(req.query.take), 200) : 50;
+    const skip = req.query.skip ? Number(req.query.skip) : 0;
+
+    const where: Prisma.purchase_ordersWhereInput = {
+      ...(Number.isFinite(storeId) ? { store_id: storeId } : {}),
+      ...(status ? { status } : {}),
+      ...(Number.isFinite(supplierId) ? { supplier_id: supplierId } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.purchase_orders.findMany({
+        where,
+        include: { purchase_items: true, suppliers: true, stores: true, users: true },
+        orderBy: { id: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.purchase_orders.count({ where }),
+    ]);
+
+    return res.json({ items, total, take, skip });
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.get('/:id', (req, res) => {
-  res.json({ id: req.params.id, status: 'pending', totalAmount: 0 });
+/**
+ * UC-M3: Purchase order details
+ * GET /api/v1/orders/:id
+ */
+router.get('/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'Invalid order id' });
+    }
+
+    const order = await prisma.purchase_orders.findUnique({
+      where: { id },
+      include: {
+        suppliers: true,
+        stores: true,
+        users: true,
+        purchase_items: { include: { product_variants: { include: { products: true } } } },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    return res.json({ order });
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.post('/', (_req, res) => {
-  res.status(501).json({ message: 'Not Implemented' });
+/**
+ * UC-M3: Create purchase order
+ * POST /api/v1/orders
+ * Body:
+ * {
+ *   storeId: number,
+ *   supplierId?: number,
+ *   createdBy?: number,
+ *   orderNumber?: string,
+ *   items: Array<{ variantId: number, quantity: number, unitCost: number }>
+ * }
+ */
+router.post('/', async (req, res, next) => {
+  try {
+    const { storeId, supplierId, createdBy, orderNumber, items } = req.body ?? {};
+    const storeIdNum = Number(storeId);
+    const supplierIdNum = supplierId !== undefined && supplierId !== null ? Number(supplierId) : null;
+    const createdByNum = createdBy !== undefined && createdBy !== null ? Number(createdBy) : null;
+
+    if (!Number.isFinite(storeIdNum) || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Invalid storeId/items' });
+    }
+    if (supplierIdNum !== null && !Number.isFinite(supplierIdNum)) {
+      return res.status(400).json({ error: 'Invalid supplierId' });
+    }
+    if (createdByNum !== null && !Number.isFinite(createdByNum)) {
+      return res.status(400).json({ error: 'Invalid createdBy' });
+    }
+
+    const parsedItems: Array<{ variantId: number; quantity: Prisma.Decimal; unitCost: Prisma.Decimal }> = items
+      .map((it: any) => ({
+        variantId: Number(it?.variantId),
+        quantity: toDecimal(it?.quantity),
+        unitCost: toDecimal(it?.unitCost),
+      }))
+      .filter((it) => Number.isFinite(it.variantId) && it.quantity.gt(0) && it.unitCost.gte(0));
+
+    if (parsedItems.length !== items.length) {
+      return res.status(400).json({ error: 'Invalid items payload' });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const store = await tx.stores.findUnique({ where: { id: storeIdNum } });
+      if (!store) throw new Error('Store not found');
+
+      if (supplierIdNum !== null) {
+        const supplier = await tx.suppliers.findUnique({ where: { id: supplierIdNum } });
+        if (!supplier) throw new Error('Supplier not found');
+      }
+
+      // Validate variants exist
+      const variantIds = parsedItems.map((i) => i.variantId);
+      const variants = await tx.product_variants.findMany({ where: { id: { in: variantIds } } });
+      if (variants.length !== variantIds.length) {
+        throw new Error('One or more variants not found');
+      }
+
+      const po = await tx.purchase_orders.create({
+        data: {
+          store_id: storeIdNum,
+          supplier_id: supplierIdNum,
+          created_by: createdByNum,
+          order_number: orderNumber ? String(orderNumber) : generateOrderNumber(),
+          status: 'draft',
+          total_amount: new Prisma.Decimal(0),
+        },
+      });
+
+      for (const item of parsedItems) {
+        await tx.purchase_items.create({
+          data: {
+            purchase_order_id: po.id,
+            variant_id: item.variantId,
+            quantity: item.quantity,
+            unit_cost: item.unitCost,
+          },
+        });
+      }
+
+      const totalAmount = parsedItems.reduce(
+        (sum, it) => sum.add(it.quantity.mul(it.unitCost)),
+        new Prisma.Decimal(0),
+      );
+
+      const updated = await tx.purchase_orders.update({
+        where: { id: po.id },
+        data: { total_amount: totalAmount },
+      });
+
+      return tx.purchase_orders.findUnique({
+        where: { id: updated.id },
+        include: { purchase_items: true, suppliers: true, stores: true, users: true },
+      });
+    });
+
+    return res.status(201).json({ order: created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * UC-M3: Update purchase order status
+ * POST /api/v1/orders/:id/status
+ * Body: { status: 'draft'|'submitted'|'approved'|'cancelled'|'received', updatedBy?: number }
+ */
+router.post('/:id/status', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const status = String(req.body?.status ?? '').trim();
+    if (!Number.isFinite(id) || !status) {
+      return res.status(400).json({ error: 'Invalid id/status' });
+    }
+
+    const allowed = new Set(['draft', 'submitted', 'approved', 'cancelled', 'received']);
+    if (!allowed.has(status)) {
+      return res.status(400).json({ error: 'Unsupported status' });
+    }
+
+    const updated = await prisma.purchase_orders.update({ where: { id }, data: { status } });
+    return res.json({ order: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * UC-M3: Receive purchase order into inventory
+ * POST /api/v1/orders/:id/receive
+ * Body: { createdBy?: number, referenceId?: string, reason?: string }
+ */
+router.post('/:id/receive', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'Invalid order id' });
+    }
+
+    const createdBy = req.body?.createdBy !== undefined ? Number(req.body.createdBy) : null;
+    const referenceId = req.body?.referenceId ? String(req.body.referenceId) : null;
+    const reason = req.body?.reason ? String(req.body.reason) : 'Receive purchase order';
+    if (createdBy !== null && !Number.isFinite(createdBy)) {
+      return res.status(400).json({ error: 'Invalid createdBy' });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const po = await tx.purchase_orders.findUnique({
+        where: { id },
+        include: { purchase_items: true },
+      });
+      if (!po) throw new Error('Order not found');
+      if (!po.store_id) throw new Error('Order missing store_id');
+      if (!po.status || !['approved', 'submitted', 'draft'].includes(po.status)) {
+        throw new Error('Order is not receivable in current status');
+      }
+
+      for (const item of po.purchase_items) {
+        if (!item.variant_id) throw new Error('Purchase item missing variant_id');
+
+        const inventory = await tx.inventories.findFirst({
+          where: { store_id: po.store_id, variant_id: item.variant_id },
+        });
+
+        if (inventory) {
+          await tx.inventories.update({
+            where: { id: inventory.id },
+            data: {
+              quantity: { increment: item.quantity },
+              last_cost: item.unit_cost,
+              last_update: new Date(),
+            },
+          });
+        } else {
+          await tx.inventories.create({
+            data: {
+              store_id: po.store_id,
+              variant_id: item.variant_id,
+              quantity: item.quantity,
+              reserved: new Prisma.Decimal(0),
+              last_cost: item.unit_cost,
+              last_update: new Date(),
+            },
+          });
+        }
+
+        await tx.stock_movements.create({
+          data: {
+            store_id: po.store_id,
+            variant_id: item.variant_id,
+            change: item.quantity,
+            movement_type: 'receive',
+            reference_id: referenceId ?? String(po.id),
+            reason,
+            created_by: createdBy,
+          },
+        });
+      }
+
+      const updated = await tx.purchase_orders.update({
+        where: { id: po.id },
+        data: { status: 'received' },
+      });
+
+      return updated;
+    });
+
+    return res.status(201).json({ order: result });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;
