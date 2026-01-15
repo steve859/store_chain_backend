@@ -6,11 +6,13 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  // output   = "../src/generated/prisma"
+  engineType = "binary"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL") // <--- QUAN TRỌNG: Phải có dòng này
 }
 
 model Store {
@@ -18,6 +20,11 @@ model Store {
   name      String
   address   String?
   phone     String?
+
+  code      String   @unique  // <-- Mã cửa hàng (VD: "HCM01"), bắt buộc unique
+  timezone  String   @default("Asia/Ho_Chi_Minh") // <-- Múi giờ, mặc định VN
+  isActive  Boolean  @default(true) @map("is_active") // <-- Trạng thái hoạt động (Open/Closed)
+
   createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
 
   users            User[]            @relation("StoreUsers")
@@ -31,10 +38,24 @@ model Store {
 model Role {
   id    String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name  String  @unique
-
+  description String?
+  
   users User[]
 
+  permissions Permission[] // <-- Quan hệ nhiều-nhiều (Implicit m-n relation của Prisma)
+
   @@map("roles")
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  action      String   @unique // VD: "user.create", "store.view", "report.export"
+  description String?  // Mô tả: "Cho phép tạo người dùng mới"
+  
+  roles       Role[]   // <-- Quan hệ ngược lại với Role
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 }
 
 model User {
@@ -44,7 +65,10 @@ model User {
   name         String
   email        String     @unique
   passwordHash String     @map("password_hash")
+  
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  deletedAt DateTime? @map("deleted_at") // <-- Thời điểm xóa mềm. Null = Active
 
   store      Store?    @relation("StoreUsers", fields: [storeId], references: [id], onDelete: SetNull)
   role       Role?     @relation(fields: [roleId], references: [id])
@@ -58,12 +82,27 @@ model Product {
   id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name        String
   description String?
-  category    String?
+  categoryId  String?   @map("category_id") @db.Uuid
+  category    Category? @relation(fields: [categoryId], references: [id])
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   skus Sku[]
 
   @@map("products")
+}
+
+// 1. Thêm Model Category mới
+model Category {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relation: 1 Category có nhiều Products
+  products    Product[]
+
+  @@map("categories")
 }
 
 model Sku {
@@ -130,8 +169,16 @@ model Supplier {
   id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name      String
   email     String?
-  phone     String?
+  phone     String
+
+  address       String?
+  taxCode       String?   @map("tax_code")
+  contactPerson String?   @map("contact_person")
+  note          String?
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  deletedAt DateTime? @map("deleted_at") // <-- Soft delete cho nhà cung cấp
 
   purchaseOrders PurchaseOrder[]
 
@@ -164,4 +211,47 @@ model AuditLog {
   user User? @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
+}
+
+// Model lưu cấu hình hệ thống (Key-Value)
+model SystemSetting {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  key         String   @unique // Ví dụ: 'default_tax', 'currency'
+  value       String   // Giá trị lưu dưới dạng chuỗi
+  type        String   // 'string', 'number', 'boolean', 'json'
+  group       String   @default("GENERAL") // Để chia nhóm hiển thị trên UI (GENERAL, FINANCE...)
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("system_settings")
+}
+
+// --- ENUM MỚI ---
+enum DiscountType {
+  PERCENTAGE // Giảm theo % (VD: 10%)
+  FIXED_AMOUNT // Giảm số tiền cố định (VD: 50k)
+}
+
+// --- MODEL MỚI HOÀN TOÀN ---
+model Promotion {
+  id            Int          @id @default(autoincrement())
+  code          String       @unique // Mã Coupon (VD: SUMMER2024)
+  name          String       // Tên chương trình
+  description   String?
+  
+  type          DiscountType // Loại giảm giá
+  value         Decimal      // Giá trị giảm (10 hoặc 50000)
+  
+  startDate     DateTime     @map("start_date")
+  endDate       DateTime     @map("end_date")
+  
+  minOrderValue Decimal?     @map("min_order_value") // Đơn tối thiểu để áp dụng
+  maxDiscount   Decimal?     @map("max_discount")    // Giảm tối đa (cho loại %)
+  
+  isActive      Boolean      @default(true) @map("is_active")
+  
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  @@map("promotions") // Tên bảng trong DB
 }
