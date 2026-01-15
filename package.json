@@ -4,9 +4,15 @@
   "description": "Backend skeleton for a convenience store chain management system",
   "main": "dist/server.js",
   "scripts": {
+    "postinstall": "prisma generate --schema prisma/schema.prisma",
+
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+
+    "dev:docker": "ts-node src/server.ts",
+
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+
     "lint": "eslint . --ext .ts",
     "test": "jest"
   },
@@ -21,11 +27,13 @@
   },
   "homepage": "https://github.com/steve859/store_chain_backend#readme",
   "dependencies": {
+    "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
     "morgan": "^1.10.0",
+    "pg": "^8.16.3",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
