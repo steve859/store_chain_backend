@@ -13,10 +13,6 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
   return this.toString();
 };
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`API server listening on http://0.0.0.0:${PORT}`);
-});
-
 const startServer = async () => {
   const httpServer = http.createServer(app);
 
@@ -31,8 +27,8 @@ const startServer = async () => {
 
   app.set('io', io);
 
-  httpServer.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`API server listening on http://0.0.0.0:${PORT}`);
     console.log(`Socket.io is ready`);
   });
 };

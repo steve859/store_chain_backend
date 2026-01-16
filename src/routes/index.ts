@@ -10,6 +10,14 @@ import returnsRouter from '../modules/returns/returns.router';
 
 const router = Router();
 
+router.get('/', (_req, res) => {
+	res.json({
+		status: 'ok',
+		version: 'v1',
+		routes: ['stores', 'products', 'inventory', 'orders', 'users', 'pos', 'transfers', 'returns'],
+	});
+});
+
 router.use('/stores', storesRouter);
 router.use('/products', productsRouter);
 router.use('/inventory', inventoryRouter);
