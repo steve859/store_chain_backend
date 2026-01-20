@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { Prisma } from '@prisma/client';
+import prisma from '../../db/prisma'; // Import từ file vừa tạo ở Bước 1
 
 interface CreateSupplierDto {
   name: string;
@@ -12,90 +11,95 @@ interface CreateSupplierDto {
   note?: string;
 }
 
-interface UpdateSupplierDto {
-  name?: string;
-  phone?: string;
-  email?: string;
-  address?: string;
-  taxCode?: string;
-  contactPerson?: string;
-  note?: string;
+interface UpdateSupplierDto extends Partial<CreateSupplierDto> {}
+
+interface GetSuppliersParams {
+  page?: number;
+  limit?: number;
+  search?: string;
 }
 
 export const SuppliersService = {
-  // 1. Lấy danh sách (Chưa bị xóa)
-  getAllSuppliers: async () => {
-    return prisma.supplier.findMany({
-      where: { 
-        deletedAt: null // Logic Soft Delete chuẩn
-      }, 
-      orderBy: { createdAt: 'desc' }
-    });
+  // 1. Lấy danh sách
+  getAllSuppliers: async ({ page = 1, limit = 10, search }: GetSuppliersParams) => {
+    const skip = (page - 1) * limit;
+
+    // SỬA: Khai báo điều kiện where dạng object thường, không cần ép kiểu Prisma.suppliersWhereInput
+    const whereCondition: Prisma.suppliersWhereInput = {
+      deleted_at: null,
+    };
+
+    if (search) {
+      whereCondition.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search } },
+        { contact_name: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    const [total, suppliers] = await Promise.all([
+      prisma.supplier.count({ where: whereCondition }),
+      prisma.supplier.findMany({
+        where: whereCondition,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
+    return {
+      data: suppliers,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
   },
 
-  // 2. Lấy chi tiết
-  getSupplierById: async (id: string) => { // ID là string
-    const supplier = await prisma.supplier.findUnique({ where: { id } });
-    
-    // Check nếu không có hoặc đã bị xóa
-    if (!supplier || supplier.deletedAt) {
-      throw new Error('Supplier not found');
-    }
+  // ... (Các hàm getSupplierById, create, update giữ nguyên logic cũ) ...
+
+  getSupplierById: async (id: string) => {
+    const supplier = await prisma.supplier.findFirst({
+      where: { id, deletedAt: null }
+    });
+    if (!supplier) throw new Error('Supplier not found');
     return supplier;
   },
 
-  // 3. Tạo mới
   createSupplier: async (data: CreateSupplierDto) => {
-    // Check trùng phone
     const existingPhone = await prisma.supplier.findFirst({
-      where: { 
-        phone: data.phone,
-        deletedAt: null // Chỉ check trùng với những người đang hoạt động
-      }
+      where: { phone: data.phone, deletedAt: null }
     });
-    if (existingPhone) {
-      throw new Error('Supplier with this phone number already exists.');
-    }
+    if (existingPhone) throw new Error('Supplier with this phone number already exists.');
 
-    // Check trùng email
     if (data.email) {
       const existingEmail = await prisma.supplier.findFirst({
         where: { email: data.email, deletedAt: null }
       });
-      if (existingEmail) {
-        throw new Error('Supplier with this email already exists.');
-      }
+      if (existingEmail) throw new Error('Supplier with this email already exists.');
     }
 
-    return prisma.supplier.create({
-      data: {
-        ...data,
-        // Không cần isActive, mặc định deletedAt là null
-      }
-    });
+    return prisma.supplier.create({ data });
   },
 
-  // 4. Cập nhật
   updateSupplier: async (id: string, data: UpdateSupplierDto) => {
-    const supplier = await prisma.supplier.findUnique({ where: { id } });
-    if (!supplier || supplier.deletedAt) throw new Error('Supplier not found');
+    const supplier = await prisma.supplier.findFirst({ where: { id, deletedAt: null } });
+    if (!supplier) throw new Error('Supplier not found');
 
     if (data.phone && data.phone !== supplier.phone) {
       const duplicate = await prisma.supplier.findFirst({ 
-        where: { phone: data.phone, deletedAt: null } 
+        where: { phone: data.phone, deletedAt: null, id: { not: id } }
       });
       if (duplicate) throw new Error('Phone number is already taken.');
     }
 
-    return prisma.supplier.update({
-      where: { id },
-      data
-    });
+    return prisma.supplier.update({ where: { id }, data });
   },
 
-  // 5. Xóa (Soft Delete bằng deletedAt)
   deleteSupplier: async (id: string) => {
-    // Logic: Cập nhật deletedAt thành thời gian hiện tại
+    await SuppliersService.getSupplierById(id);
     return prisma.supplier.update({
       where: { id },
       data: { deletedAt: new Date() }

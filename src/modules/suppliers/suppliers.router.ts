@@ -1,31 +1,50 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { SuppliersService } from './suppliers.service';
+import { authenticateToken } from '../../middlewares/auth.middleware';
+import { authorizeRoles } from '../../middlewares/rbac.middleware';
 
 const router = Router();
 
-// GET /api/suppliers
-router.get('/', async (req, res) => {
+// --- ÁP DỤNG MIDDLEWARE CHUNG ---
+router.use(authenticateToken);
+
+// --- ĐỊNH NGHĨA ROUTE KÈM LOGIC XỬ LÝ (CONTROLLER) ---
+
+/**
+ * GET /api/suppliers
+ * Lấy danh sách, có phân trang và tìm kiếm
+ */
+router.get('/', async (req: Request, res: Response) => {
   try {
-    const suppliers = await SuppliersService.getAllSuppliers();
-    res.json(suppliers);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const result = await SuppliersService.getAllSuppliers({ page, limit, search });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 });
 
-// GET /api/suppliers/:id
-router.get('/:id', async (req, res) => {
+/**
+ * GET /api/suppliers/:id
+ * Lấy chi tiết một nhà cung cấp
+ */
+router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const id = req.params.id; // Không cần parseInt
-    const supplier = await SuppliersService.getSupplierById(id);
+    const supplier = await SuppliersService.getSupplierById(req.params.id);
     res.json(supplier);
   } catch (error) {
     res.status(404).json({ error: (error as Error).message });
   }
 });
 
-// POST /api/suppliers
-router.post('/', async (req, res) => {
+/**
+ * POST /api/suppliers
+ * Tạo mới nhà cung cấp (Chỉ Admin/Manager)
+ */
+router.post('/', authorizeRoles(['ADMIN', 'STORE_MANAGER']), async (req: Request, res: Response) => {
   try {
     if (!req.body.name || !req.body.phone) {
       return res.status(400).json({ error: 'Name and Phone are required' });
@@ -37,22 +56,26 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/suppliers/:id
-router.put('/:id', async (req, res) => {
+/**
+ * PUT /api/suppliers/:id
+ * Cập nhật nhà cung cấp (Chỉ Admin/Manager)
+ */
+router.put('/:id', authorizeRoles(['ADMIN', 'STORE_MANAGER']), async (req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    const updatedSupplier = await SuppliersService.updateSupplier(id, req.body);
+    const updatedSupplier = await SuppliersService.updateSupplier(req.params.id, req.body);
     res.json(updatedSupplier);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
 });
 
-// DELETE /api/suppliers/:id
-router.delete('/:id', async (req, res) => {
+/**
+ * DELETE /api/suppliers/:id
+ * Xóa mềm nhà cung cấp (Chỉ Admin)
+ */
+router.delete('/:id', authorizeRoles(['ADMIN']), async (req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    await SuppliersService.deleteSupplier(id);
+    await SuppliersService.deleteSupplier(req.params.id);
     res.json({ message: 'Supplier deleted successfully' });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });

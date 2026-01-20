@@ -18,8 +18,8 @@ services:
       - postgres
       - redis
     volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
+      - .:/app
+      - /app/node_modules
 
   postgres:
     image: postgres:15
@@ -41,7 +41,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin
+    container_name: pgadmin1
     restart: unless-stopped
     ports:
       - "5050:80"

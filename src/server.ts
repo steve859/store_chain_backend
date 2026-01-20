@@ -4,25 +4,15 @@ import { Server } from 'socket.io';
 import { setupSocketHandlers } from './events/socket';
 import dotenv from 'dotenv';
 import app from './app';
+import { startScheduler } from './modules/cron/scheduler';
 
 dotenv.config();
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-declare global {
-  interface BigInt {
-    toJSON(): string;
-  }
-}
-
-BigInt.prototype.toJSON = function () {
+(BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
-
-/*app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`API server listening on http://localhost:${PORT}`);
-});*/
 
 const startServer = async () => {
   const httpServer = http.createServer(app);
@@ -38,13 +28,11 @@ const startServer = async () => {
 
   app.set('io', io);
 
-  httpServer.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+  await startScheduler();
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`API server listening on http://0.0.0.0:${PORT}`);
     console.log(`Socket.io is ready`);
   });
 };
 
-//startServer();
-if (require.main === module) {
-  startServer();
-}
+startServer();
