@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import { setupSocketHandlers } from './events/socket';
 import dotenv from 'dotenv';
 import app from './app';
+import { startScheduler } from './modules/cron/scheduler';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ const startServer = async () => {
 
   app.set('io', io);
 
+  await startScheduler();
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`API server listening on http://0.0.0.0:${PORT}`);
     console.log(`Socket.io is ready`);
